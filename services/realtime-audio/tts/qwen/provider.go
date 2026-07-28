@@ -172,7 +172,7 @@ func (s *stream) run() {
 	req.Header.Set("Authorization", "Bearer "+s.config.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-DashScope-SSE", "enable")
-	resp, err := s.config.HTTPClient.Do(req)
+	resp, err := withoutRedirects(s.config.HTTPClient).Do(req)
 	if err != nil {
 		if s.ctx.Err() == nil {
 			s.setError(fmt.Errorf("call Qwen TTS: %w", err))
@@ -204,6 +204,10 @@ func (s *stream) run() {
 		var chunk generationResponse
 		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
 			s.setError(fmt.Errorf("decode Qwen TTS event: %w", err))
+			return
+		}
+		if chunk.StatusCode != 0 && (chunk.StatusCode < http.StatusOK || chunk.StatusCode >= http.StatusMultipleChoices) {
+			s.setError(fmt.Errorf("Qwen TTS failed with status %d: %s", chunk.StatusCode, chunk.Message))
 			return
 		}
 		if chunk.Code != "" || chunk.Message != "" {
@@ -266,13 +270,11 @@ func (s *stream) downloadAudio(rawURL string) ([]byte, error) {
 	if err != nil || u.User != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || !allowedAudioHost(u.Hostname(), s.config.AudioURLAllowlist) {
 		return nil, fmt.Errorf("%w: %q", ErrAudioURLNotAllowed, rawURL)
 	}
-	client := *s.config.HTTPClient
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	req, err := http.NewRequestWithContext(s.ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("create Qwen TTS audio request: %w", err)
 	}
-	resp, err := client.Do(req)
+	resp, err := withoutRedirects(s.config.HTTPClient).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download Qwen TTS audio: %w", err)
 	}
@@ -285,6 +287,12 @@ func (s *stream) downloadAudio(rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("read Qwen TTS audio: %w", err)
 	}
 	return data, nil
+}
+
+func withoutRedirects(base *http.Client) *http.Client {
+	client := *base
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &client
 }
 
 func allowedAudioHost(host string, allowlist []string) bool {
@@ -350,9 +358,10 @@ type generationInput struct {
 }
 
 type generationResponse struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Output  struct {
+	StatusCode int    `json:"status_code"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	Output     struct {
 		Audio struct {
 			Data string `json:"data"`
 			URL  string `json:"url"`

@@ -91,7 +91,7 @@ func (p *Provider) Translate(ctx context.Context, request translate.Request) (tr
 	}
 	req.Header.Set("Authorization", "Bearer "+p.config.APIKey)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := p.config.HTTPClient.Do(req)
+	resp, err := withoutRedirects(p.config.HTTPClient).Do(req)
 	if err != nil {
 		return translate.Result{}, fmt.Errorf("call Qwen translation: %w", err)
 	}
@@ -107,6 +107,9 @@ func (p *Provider) Translate(ctx context.Context, request translate.Request) (tr
 	if err := json.Unmarshal(responseBytes, &response); err != nil {
 		return translate.Result{}, fmt.Errorf("decode Qwen translation response: %w", err)
 	}
+	if response.StatusCode != 0 && (response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices) {
+		return translate.Result{}, fmt.Errorf("Qwen translation failed with status %d: %s", response.StatusCode, response.Error.Message)
+	}
 	if response.Error.Message != "" {
 		return translate.Result{}, fmt.Errorf("Qwen translation failed: %s", response.Error.Message)
 	}
@@ -118,6 +121,12 @@ func (p *Provider) Translate(ctx context.Context, request translate.Request) (tr
 		InputTokens: response.Usage.PromptTokens, OutputTokens: response.Usage.CompletionTokens,
 		LatencyMS: time.Since(startedAt).Milliseconds(),
 	}, nil
+}
+
+func withoutRedirects(base *http.Client) *http.Client {
+	client := *base
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &client
 }
 
 type chatRequest struct {
@@ -133,7 +142,8 @@ type chatMessage struct {
 }
 
 type chatResponse struct {
-	Choices []struct {
+	StatusCode int `json:"status_code"`
+	Choices    []struct {
 		Message struct {
 			Content string `json:"content"`
 		} `json:"message"`

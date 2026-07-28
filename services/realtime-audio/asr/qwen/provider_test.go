@@ -140,6 +140,25 @@ func TestDeriveWebSocketURL(t *testing.T) {
 	}
 }
 
+func TestNewProviderRejectsInvalidRealtimeSettings(t *testing.T) {
+	tests := []struct {
+		name   string
+		config Config
+		want   error
+	}{
+		{name: "sample rate", config: Config{APIKey: "key", WebSocketURL: "ws://example.test", SampleRate: 44100}, want: ErrSampleRate},
+		{name: "VAD threshold", config: Config{APIKey: "key", WebSocketURL: "ws://example.test", VADThreshold: 2}, want: ErrVADThreshold},
+		{name: "silence duration", config: Config{APIKey: "key", WebSocketURL: "ws://example.test", SilenceDuration: 100 * time.Millisecond}, want: ErrSilenceDuration},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := NewProvider(test.config); !errors.Is(err, test.want) {
+				t.Fatalf("NewProvider() error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
 func TestWriteClosesConnectionWhenContextIsCanceled(t *testing.T) {
 	conn := &blockingWriteConn{closed: make(chan struct{})}
 	stream := &stream{conn: conn}
@@ -184,6 +203,15 @@ func TestWriteReturnsCancellationAfterWriteCompletes(t *testing.T) {
 
 	if err := stream.write(ctx, map[string]any{"type": "session.finish"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("write() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestPushAudioRejectsAfterFinishStarted(t *testing.T) {
+	stream := &stream{conn: &trackingWriteConn{closed: make(chan struct{})}}
+	stream.finishStarted.Store(true)
+
+	if err := stream.PushAudio(context.Background(), []byte("pcm")); !errors.Is(err, ErrStreamFinished) {
+		t.Fatalf("PushAudio() error = %v, want ErrStreamFinished", err)
 	}
 }
 

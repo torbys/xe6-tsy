@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,6 +144,57 @@ func TestProviderRejectsEmptyAudioResponse(t *testing.T) {
 	}
 	if _, err := stream.Finish(context.Background()); !errors.Is(err, ErrNoAudio) {
 		t.Fatalf("Finish() error = %v, want ErrNoAudio", err)
+	}
+}
+
+func TestProviderDoesNotFollowRedirects(t *testing.T) {
+	targetCalled := false
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetCalled = true
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: {}\n\n"))
+	}))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer source.Close()
+
+	provider, err := NewProvider(Config{APIKey: "test-key", BaseURL: source.URL})
+	if err != nil {
+		t.Fatalf("NewProvider() error = %v", err)
+	}
+	stream, err := provider.StartStream(context.Background(), tts.Request{Text: "hello", TargetLanguage: "en-US"})
+	if err != nil {
+		t.Fatalf("StartStream() error = %v", err)
+	}
+	_, err = stream.Finish(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "HTTP 302") {
+		t.Fatalf("Finish() error = %v, want HTTP 302", err)
+	}
+	if targetCalled {
+		t.Fatal("TTS client followed a redirect")
+	}
+}
+
+func TestProviderRejectsProtocolErrorStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"status_code\":400,\"message\":\"bad request\"}\n\n"))
+	}))
+	defer server.Close()
+
+	provider, err := NewProvider(Config{APIKey: "test-key", BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("NewProvider() error = %v", err)
+	}
+	stream, err := provider.StartStream(context.Background(), tts.Request{Text: "hello", TargetLanguage: "en-US"})
+	if err != nil {
+		t.Fatalf("StartStream() error = %v", err)
+	}
+	_, err = stream.Finish(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "status 400") {
+		t.Fatalf("Finish() error = %v, want protocol status error", err)
 	}
 }
 

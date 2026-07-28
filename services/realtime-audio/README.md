@@ -49,6 +49,7 @@ The provider packages keep vendor protocol details outside `pipeline`:
 - `asr/qwen` uses the Qwen realtime WebSocket endpoint. It sends `session.update`, streams PCM through `input_audio_buffer.append`, and sends `session.finish` before waiting for `session.finished`.
 - `translate/qwen` uses the OpenAI-compatible `POST /chat/completions` endpoint with `qwen3.6-flash`. Thinking is disabled by default for turn-level latency.
 - `tts/qwen` uses the Qwen3-TTS-Flash `POST /services/aigc/multimodal-generation/generation` endpoint with `X-DashScope-SSE: enable`, decoding Base64 audio deltas into the local `tts.Stream` port.
+- The ASR adapter validates Qwen's supported sample rates and VAD ranges. TTS URL-only responses require an explicit exact-host `AudioURLAllowlist`; provider HTTP redirects are rejected.
 
 The adapters are constructed explicitly from typed configuration values. This PR does not load process environment variables or select providers at runtime; `.env.example` is a configuration reference only, and uncommenting it does not switch providers. Keep API keys in an ignored `.env`. The current default remains the offline fake providers, so ordinary unit tests never call a third-party service.
 

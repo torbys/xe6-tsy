@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/1024XEngineer/xe6-tsy/services/realtime-audio/asr"
@@ -27,6 +28,10 @@ var (
 	ErrAPIKeyRequired   = errors.New("Qwen ASR API key is required")
 	ErrEndpointRequired = errors.New("Qwen ASR WebSocket endpoint is required")
 	ErrModelRequired    = errors.New("Qwen ASR model is required")
+	ErrStreamFinished   = errors.New("Qwen ASR stream is already finishing")
+	ErrSampleRate       = errors.New("Qwen ASR sample rate must be 8000 or 16000 Hz")
+	ErrVADThreshold     = errors.New("Qwen ASR VAD threshold must be between -1 and 1")
+	ErrSilenceDuration  = errors.New("Qwen ASR silence duration must be between 200ms and 6000ms")
 )
 
 // Config contains only provider-specific transport and session settings.
@@ -58,7 +63,7 @@ func NewProvider(config Config) (*Provider, error) {
 	if config.WebSocketURL == "" {
 		return nil, ErrEndpointRequired
 	}
-	if config.Model == "" {
+	if strings.TrimSpace(config.Model) == "" {
 		config.Model = defaultModel
 	}
 	if config.SampleRate <= 0 {
@@ -69,6 +74,15 @@ func NewProvider(config Config) (*Provider, error) {
 	}
 	if config.Provider == "" {
 		config.Provider = "aliyun"
+	}
+	if config.SampleRate != 8000 && config.SampleRate != 16000 {
+		return nil, ErrSampleRate
+	}
+	if config.VADThreshold < -1 || config.VADThreshold > 1 {
+		return nil, ErrVADThreshold
+	}
+	if config.SilenceDuration < 200*time.Millisecond || config.SilenceDuration > 6000*time.Millisecond {
+		return nil, ErrSilenceDuration
 	}
 	if config.Dialer == nil {
 		config.Dialer = websocket.DefaultDialer
@@ -177,15 +191,16 @@ type stream struct {
 	done           chan struct{}
 	readDone       chan struct{}
 
-	writeMu sync.Mutex
-	stateMu sync.Mutex
-	result  asr.FinalResult
-	err     error
-	started int64
-	ended   int64
-	finish  sync.Once
-	stop    sync.Once
-	closed  sync.Once
+	writeMu       sync.Mutex
+	stateMu       sync.Mutex
+	result        asr.FinalResult
+	err           error
+	started       int64
+	ended         int64
+	finish        sync.Once
+	finishStarted atomic.Bool
+	stop          sync.Once
+	closed        sync.Once
 }
 
 type websocketConn interface {
@@ -212,6 +227,7 @@ func (s *stream) Finish(ctx context.Context) (asr.FinalResult, error) {
 		return result, err
 	}
 	s.finish.Do(func() {
+		s.finishStarted.Store(true)
 		if err := s.write(ctx, map[string]any{"type": "session.finish"}); err != nil {
 			s.setError(err)
 			s.shutdown()
@@ -253,6 +269,9 @@ func (s *stream) write(ctx context.Context, value any) error {
 	if err := ctx.Err(); err != nil {
 		_ = s.conn.Close()
 		return err
+	}
+	if isAudioAppend(value) && s.finishStarted.Load() {
+		return ErrStreamFinished
 	}
 	if event, ok := value.(map[string]any); ok {
 		if _, exists := event["event_id"]; !exists {
@@ -297,6 +316,15 @@ func (s *stream) write(ctx context.Context, value any) error {
 		return ctxErr
 	}
 	return nil
+}
+
+func isAudioAppend(value any) bool {
+	event, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	typeName, _ := event["type"].(string)
+	return typeName == "input_audio_buffer.append"
 }
 
 func newEventID() (string, error) {
