@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowLeft,
   CaretRight,
   ClockCounterClockwise,
   X,
@@ -163,10 +162,6 @@ export function HistorySettings({
                 <h3>{sessionDate(selected)} 的记录</h3>
                 <p>{sessionDuration(selected)} · {statusLabel(selected.status)}</p>
               </div>
-              <button aria-label="返回历史会话" className={styles.historyWorkspaceBack} onClick={() => setSelected(null)} type="button">
-                <ArrowLeft aria-hidden="true" size={17} />
-                会话列表
-              </button>
             </header>
             {detailLoading ? <p className={styles.settingsState}>正在读取双语记录...</p> : null}
             {error ? <p className={styles.settingsState}>{error}</p> : null}

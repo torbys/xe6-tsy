@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { saveAuthSession } from "../lib/auth-session";
@@ -67,7 +67,8 @@ describe("HistorySettings", () => {
   });
 
   it("opens a labeled transcript for the selected historical session", async () => {
-    render(<HistorySettings />);
+    const onExit = vi.fn();
+    render(<HistorySettings onExit={onExit} />);
 
     const sessionButton = await screen.findByRole("button", {
       name: /查看.*历史记录/,
@@ -79,12 +80,8 @@ describe("HistorySettings", () => {
     expect(screen.getByText("Welcome to the main venue.")).toBeInTheDocument();
     expect(screen.getByText(/会话 vs-histo/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "返回历史会话" }));
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: /查看.*历史记录/ }),
-      ).toBeVisible(),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "返回设置" }));
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 
   it("keeps recent settings items to metadata until opened", async () => {

@@ -9,6 +9,7 @@ import { getOrCreateAuthSession } from "../lib/auth-session";
 import {
   SUPPORTED_LANGUAGES,
   languageLabel,
+  languageTranslation,
   type LanguageCode,
   type VoiceSessionConfig,
 } from "../lib/languages";
@@ -96,7 +97,7 @@ function SelectRow({
           onClick={() => setOpen((current) => !current)}
           type="button"
         >
-          <span>{labels[value] ?? languageLabel(value)}</span>
+          <span>{languageTranslation(value)}</span>
           <CaretDown aria-hidden="true" size={15} />
         </button>
         {open ? (
@@ -114,8 +115,8 @@ function SelectRow({
                 type="button"
               >
                 <span>
-                  <strong>{labels[option] ?? languageLabel(option)}</strong>
-                  <small>{option}</small>
+                  <strong>{languageTranslation(option)}</strong>
+                  <small>{labels[option] ?? languageLabel(option)} · {option}</small>
                 </span>
                 {option === value ? <Check aria-hidden="true" size={15} /> : null}
               </button>
