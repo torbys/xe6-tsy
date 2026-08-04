@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, X } from "@phosphor-icons/react";
+import { CaretDown, Check, X } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
@@ -14,7 +14,7 @@ import {
 } from "../lib/languages";
 import { listSupportedLanguages } from "../lib/lingow-api";
 import styles from "../voice.module.css";
-import { HistorySettings } from "./history-settings";
+import { HistoryRecentSettings, HistorySettings } from "./history-settings";
 import { OptionWheel } from "./option-wheel";
 import { UsageSettings } from "./usage-settings";
 
@@ -66,20 +66,64 @@ function SelectRow({
   value: LanguageCode;
   onChange: (value: LanguageCode) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
   return (
-    <label className={styles.settingSelectRow}>
+    <div className={styles.settingSelectRow}>
       <span>{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value as LanguageCode)}
-      >
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {labels[option] ?? languageLabel(option)} ({option})
-          </option>
-        ))}
-      </select>
-    </label>
+      <div className={styles.languagePicker} ref={pickerRef}>
+        <button
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          className={styles.languagePickerTrigger}
+          onClick={() => setOpen((current) => !current)}
+          type="button"
+        >
+          <span>{labels[value] ?? languageLabel(value)}</span>
+          <CaretDown aria-hidden="true" size={15} />
+        </button>
+        {open ? (
+          <div aria-label={`${label}选项`} className={styles.languagePickerDrawer} role="listbox">
+            {options.map((option) => (
+              <button
+                aria-selected={option === value}
+                className={styles.languagePickerOption}
+                key={option}
+                onClick={() => {
+                  onChange(option);
+                  setOpen(false);
+                }}
+                role="option"
+                type="button"
+              >
+                <span>
+                  <strong>{labels[option] ?? languageLabel(option)}</strong>
+                  <small>{option}</small>
+                </span>
+                {option === value ? <Check aria-hidden="true" size={15} /> : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -91,7 +135,7 @@ function SettingsDetail({
   languageOptions,
   languageLoading,
   languageLabels,
-  onExitHistory,
+  onOpenHistory,
 }: {
   selectedId: SettingId;
   voiceConfig: VoiceSessionConfig;
@@ -100,7 +144,7 @@ function SettingsDetail({
   languageOptions: readonly LanguageCode[];
   languageLoading: boolean;
   languageLabels: Readonly<Record<string, string>>;
-  onExitHistory: () => void;
+  onOpenHistory: (session: import("../lib/lingow-api").VoiceSession) => void;
 }) {
   switch (selectedId) {
     case "language":
@@ -153,7 +197,7 @@ function SettingsDetail({
         </div>
       );
     case "history":
-      return <HistorySettings onExit={onExitHistory} />;
+      return <HistoryRecentSettings onOpen={onOpenHistory} />;
     case "usage":
       return <UsageSettings />;
     case "about":
@@ -188,6 +232,8 @@ export function SettingsPanel({
   const [languageOptions, setLanguageOptions] = useState<LanguageCode[]>(SUPPORTED_LANGUAGES);
   const [languageLoading, setLanguageLoading] = useState(true);
   const [languageLabels, setLanguageLabels] = useState<Record<string, string>>({});
+  const [historyWorkspaceOpen, setHistoryWorkspaceOpen] = useState(false);
+  const [historyWorkspaceSessionId, setHistoryWorkspaceSessionId] = useState<string>();
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const selected = SETTINGS_ITEMS[selectedIndex];
@@ -303,8 +349,8 @@ export function SettingsPanel({
           </button>
         </header>
 
-        <div className={selected.id === "history" ? styles.settingsContentHistory : styles.settingsContent}>
-          {selected.id !== "history" ? <section aria-label="设置导航" className={styles.settingsNavigation}>
+        <div className={historyWorkspaceOpen ? styles.settingsContentHistory : styles.settingsContent}>
+          {!historyWorkspaceOpen ? <section aria-label="设置导航" className={styles.settingsNavigation}>
             <div className={styles.settingsCount}>
               <span>{String(selectedIndex + 1).padStart(2, "0")}</span>
               <i />
@@ -326,17 +372,11 @@ export function SettingsPanel({
             </div>
           </section> : null}
 
-          <section aria-live="polite" className={selected.id === "history" ? styles.settingsDetailHistory : styles.settingsDetail}>
-            {selected.id === "history" ? (
-              <SettingsDetail
-                debug={debug}
-                languageLoading={languageLoading}
-                languageOptions={languageOptions}
-                languageLabels={languageLabels}
-                onConfigChange={onConfigChange}
-                onExitHistory={() => setSelectedIndex(0)}
-                selectedId={selected.id}
-                voiceConfig={voiceConfig}
+          <section aria-live="polite" className={historyWorkspaceOpen ? styles.settingsDetailHistory : styles.settingsDetail}>
+            {historyWorkspaceOpen ? (
+              <HistorySettings
+                initialSessionId={historyWorkspaceSessionId}
+                onExit={() => setHistoryWorkspaceOpen(false)}
               />
             ) : <AnimatePresence mode="wait">
               <motion.div
@@ -358,7 +398,10 @@ export function SettingsPanel({
                     languageLoading={languageLoading}
                     languageOptions={languageOptions}
                     languageLabels={languageLabels}
-                    onExitHistory={() => setSelectedIndex(0)}
+                    onOpenHistory={(session) => {
+                      setHistoryWorkspaceSessionId(session.id);
+                      setHistoryWorkspaceOpen(true);
+                    }}
                     onConfigChange={onConfigChange}
                     selectedId={selected.id}
                     voiceConfig={voiceConfig}

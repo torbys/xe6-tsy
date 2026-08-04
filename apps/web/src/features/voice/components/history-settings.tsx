@@ -49,7 +49,15 @@ function statusLabel(status: VoiceSession["status"]): string {
   }
 }
 
-export function HistorySettings({ onExit = () => undefined }: { onExit?: () => void }) {
+type HistorySettingsProps = {
+  onExit?: () => void;
+  initialSessionId?: string;
+};
+
+export function HistorySettings({
+  onExit = () => undefined,
+  initialSessionId,
+}: HistorySettingsProps) {
   const [sessions, setSessions] = useState<VoiceSession[]>([]);
   const [selected, setSelected] = useState<VoiceSession | null>(null);
   const [turns, setTurns] = useState<VoiceTurn[]>([]);
@@ -71,11 +79,6 @@ export function HistorySettings({ onExit = () => undefined }: { onExit?: () => v
     }
   }, []);
 
-  useEffect(() => {
-    const requestId = window.setTimeout(() => void loadSessions(), 0);
-    return () => window.clearTimeout(requestId);
-  }, [loadSessions]);
-
   const openSession = async (session: VoiceSession) => {
     setSelected(session);
     setTurns([]);
@@ -91,6 +94,21 @@ export function HistorySettings({ onExit = () => undefined }: { onExit?: () => v
       setDetailLoading(false);
     }
   };
+
+  useEffect(() => {
+    const requestId = window.setTimeout(() => {
+      void loadSessions().then(() => undefined);
+    }, 0);
+    return () => window.clearTimeout(requestId);
+  }, [loadSessions]);
+
+  useEffect(() => {
+    if (!initialSessionId || loading || selected) return;
+    const session = sessions.find((item) => item.id === initialSessionId);
+    if (!session) return;
+    const requestId = window.setTimeout(() => void openSession(session), 0);
+    return () => window.clearTimeout(requestId);
+  }, [initialSessionId, loading, sessions, selected]);
 
   return (
     <div className={styles.historyWorkspace}>
@@ -174,6 +192,75 @@ export function HistorySettings({ onExit = () => undefined }: { onExit?: () => v
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+export function HistoryRecentSettings({
+  onOpen,
+}: {
+  onOpen: (session: VoiceSession) => void;
+}) {
+  const [sessions, setSessions] = useState<VoiceSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadRecentSessions = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const auth = await getOrCreateAuthSession();
+      const page = await listVoiceSessions(auth.tokens.access_token, { limit: 5 });
+      setSessions(page.sessions.slice(0, 5));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "无法加载最近会话");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const requestId = window.setTimeout(() => void loadRecentSessions(), 0);
+    return () => window.clearTimeout(requestId);
+  }, [loadRecentSessions]);
+
+  return (
+    <div className={styles.historyRecentSettings}>
+      <div className={styles.historyRecentHeader}>
+        <div>
+          <span className={styles.historyWorkspaceKicker}>RECENT 5</span>
+          <p>最近会话</p>
+        </div>
+        <span className={styles.historyRecentMeta}>仅展示摘要</span>
+      </div>
+      {loading ? <p className={styles.settingsState}>正在读取最近会话...</p> : null}
+      {error ? (
+        <div className={styles.settingsState}>
+          <p>{error}</p>
+          <button onClick={() => void loadRecentSessions()} type="button">重新加载</button>
+        </div>
+      ) : null}
+      {!loading && !error && sessions.length === 0 ? (
+        <p className={styles.settingsState}>还没有历史会话</p>
+      ) : null}
+      <div className={styles.historyRecentList}>
+        {sessions.map((session) => (
+          <button
+            aria-label={`打开${sessionDate(session)}历史会话`}
+            className={styles.historyRecentItem}
+            key={session.id}
+            onClick={() => onOpen(session)}
+            type="button"
+          >
+            <ClockCounterClockwise aria-hidden="true" size={17} />
+            <span>
+              <strong>{sessionDate(session)}</strong>
+              <small>{sessionDuration(session)} · {statusLabel(session.status)}</small>
+            </span>
+            <CaretRight aria-hidden="true" size={16} />
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
