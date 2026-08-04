@@ -1,6 +1,8 @@
 export type LanguageCode = string;
 
 export const LANGUAGE_LABELS: Record<string, string> = {
+  "it-IT": "Italian",
+  "es-ES": "Spanish",
   "zh-CN": "中文",
   "en-US": "English",
   "ja-JP": "日本語",
@@ -15,6 +17,8 @@ export const LANGUAGE_LABELS: Record<string, string> = {
 };
 
 export const LANGUAGE_TRANSLATIONS: Record<string, string> = {
+  "it-IT": "Italian",
+  "es-ES": "Spanish",
   "zh-CN": "中文（简体）",
   "en-US": "英语（美国）",
   "ja-JP": "日语",
@@ -37,9 +41,8 @@ export const SUPPORTED_LANGUAGES: LanguageCode[] = [
   "de-DE",
   "ru-RU",
   "pt-BR",
-  "th-TH",
-  "id-ID",
-  "vi-VN",
+  "it-IT",
+  "es-ES",
 ];
 
 export function languageLabel(code: string): string {
