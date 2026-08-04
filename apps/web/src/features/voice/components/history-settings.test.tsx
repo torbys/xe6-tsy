@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { saveAuthSession } from "../lib/auth-session";
-import { HistorySettings } from "./history-settings";
+import { HistoryRecentSettings, HistorySettings } from "./history-settings";
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -85,5 +85,19 @@ describe("HistorySettings", () => {
         screen.getByRole("button", { name: /查看.*历史记录/ }),
       ).toBeVisible(),
     );
+  });
+
+  it("keeps recent settings items to metadata until opened", async () => {
+    const onOpen = vi.fn();
+    render(<HistoryRecentSettings onOpen={onOpen} />);
+
+    const sessionButton = await screen.findByRole("button", {
+      name: /打开.*历史会话/,
+    });
+    expect(screen.queryByText("Welcome to the main venue.")).not.toBeInTheDocument();
+    fireEvent.click(sessionButton);
+
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onOpen.mock.calls[0][0].id).toBe("vs-history-20260804");
   });
 });
